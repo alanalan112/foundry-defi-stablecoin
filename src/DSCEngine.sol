@@ -54,6 +54,7 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine__TokenNotAllowed();
     error DSCEngine__TransferFailed();
     error DSCEngine__BreaksHealthFactor(uint256);
+    error DSCEngine__MintFailed();
 
     /*//////////////////////////////////////////////////////////////
                             STATE VARIABLES
@@ -112,8 +113,22 @@ contract DSCEngine is ReentrancyGuard {
     /*//////////////////////////////////////////////////////////////
                            EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-
-    function depositCollateralAndMintDSC() external {}
+    /**
+     * @notice follows CEI
+     * @param tokenCollateralAddress the address of the token to deposit as collateral
+     * @param amountCollateral the amount of collateral to deposit
+     * @param amountDSCToMint the amount of DSC to mint
+     * @notice they must have more collateral value than the minimum threshold
+     * @notice this function will deposit your collateral and mint DSC in one transaction
+     */
+    function depositCollateralAndMintDSC(
+        address tokenCollateralAddress,
+        uint256 amountCollateral,
+        uint256 amountDSCToMint
+    ) external amountGreaterThanZero(amountCollateral) isAllowedToken(tokenCollateralAddress) nonReentrant {
+        depositCollateral(tokenCollateralAddress, amountCollateral);
+        mintDSC(amountDSCToMint);
+    }
 
     /**
      * @notice follows CEI
@@ -121,7 +136,7 @@ contract DSCEngine is ReentrancyGuard {
      * @param amountCollateral the amount of collarteral to deposit
      */
     function depositCollateral(address tokenCollateralAddress, uint256 amountCollateral)
-        external
+        public
         amountGreaterThanZero(amountCollateral)
         isAllowedToken(tokenCollateralAddress)
         nonReentrant
@@ -145,9 +160,21 @@ contract DSCEngine is ReentrancyGuard {
      * @param amountDSCToMint the amount of dsc to mint
      * @notice they must have more collateral value than the minimum threshold
      */
-    function mintDSC(uint256 amountDSCToMint) external amountGreaterThanZero(amountDSCToMint) nonReentrant {
+    function mintDSC(uint256 amountDSCToMint)
+        public
+        amountGreaterThanZero(amountDSCToMint)
+        nonReentrant
+        returns (bool)
+    {
         s_DSCMinted[msg.sender] += amountDSCToMint;
         _revertIfHealthFactorIsBroken(msg.sender);
+        bool minted = i_DSC.mint(msg.sender, amountDSCToMint);
+        if (!minted) {
+            s_DSCMinted[msg.sender] -= amountDSCToMint;
+            revert DSCEngine__MintFailed();
+        } else {
+            return minted;
+        }
     }
 
     function burnDSC() external {}
